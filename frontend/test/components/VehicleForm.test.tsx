@@ -398,7 +398,7 @@ describe('VehicleForm – submit', () => {
     expect(submits[0].blocked).toBe(true);
   });
 
-  it('treats an empty (0-byte) .txt file as no logbook', async () => {
+  it('accepts an empty (0-byte) .txt file: a logbook can start with no entries', async () => {
     const submits = captureSubmits();
     const { user, alertSpy } = setup();
 
@@ -406,8 +406,8 @@ describe('VehicleForm – submit', () => {
     await uploadLogbook(user, '');
     await user.click(submitButton());
 
-    expect(alertSpy).toHaveBeenLastCalledWith(LOGBOOK_REQUIRED_MESSAGE);
-    expect(submits[0].blocked).toBe(true);
+    expect(alertSpy).not.toHaveBeenCalled();
+    expect(submits[0].blocked).toBe(false);
   });
 
   it('re-checks the file type on submit, before anything is sent', async () => {

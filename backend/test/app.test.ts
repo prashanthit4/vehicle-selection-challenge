@@ -7,7 +7,7 @@ import {
   logbookTooLargeMessage,
   UPLOAD_PATH,
 } from '@vehicle/shared/constants';
-import { formatResultPage } from '@vehicle/shared/templates';
+import { EMPTY_LOGBOOK_TEXT, formatResultPage } from '@vehicle/shared/templates';
 import type { VehicleSelection } from '@vehicle/shared/types';
 import { app } from '../src/app';
 import { MAX_LOGBOOK_BYTES, UPLOAD_LIMITS } from '../src/config';
@@ -51,6 +51,14 @@ describe('POST /upload', () => {
     expect(res.headers['x-content-type-options']).toBe('nosniff');
   });
 
+  it.each(['', '  \n  '])('accepts an empty or whitespace-only logbook %j and says "no entries yet!!"', async (content) => {
+    const res = await postUpload(vehicle, { content });
+
+    expect(res.status).toBe(200);
+    expect(res.text).toBe(formatResultPage({ ...vehicle, logbookText: content }));
+    expect(res.text).toContain(`Logbook:\n\n${EMPTY_LOGBOOK_TEXT}\n`);
+  });
+
   it('accepts a logbook exactly at the size limit', async () => {
     const res = await postUpload(vehicle, { content: 'a'.repeat(MAX_LOGBOOK_BYTES) });
     expect(res.status).toBe(200);
@@ -70,8 +78,16 @@ describe('POST /upload', () => {
       expect(res.text).toBe(LOGBOOK_REQUIRED_MESSAGE);
     });
 
-    it.each(['', '  \n  '])('returns 400 "Please upload logbook" for an empty/blank file %j', async (content) => {
-      const res = await postUpload(vehicle, { content });
+    it('returns 400 "Please upload logbook" for a browser form submitted with no file chosen', async () => {
+      // The exact bytes a browser sends: the file part is still present, with a blank filename.
+      const part = (headers: string, body: string) => `--B\r\n${headers}\r\n\r\n${body}\r\n`;
+      const body =
+        part('Content-Disposition: form-data; name="make"', vehicle.make) +
+        part('Content-Disposition: form-data; name="model"', vehicle.model) +
+        part('Content-Disposition: form-data; name="badge"', vehicle.badge) +
+        part(`Content-Disposition: form-data; name="${LOGBOOK_FIELD}"; filename=""\r\nContent-Type: application/octet-stream`, '') +
+        '--B--\r\n';
+      const res = await request(app).post(UPLOAD_PATH).set('Content-Type', 'multipart/form-data; boundary=B').send(body);
 
       expect(res.status).toBe(400);
       expect(res.text).toBe(LOGBOOK_REQUIRED_MESSAGE);

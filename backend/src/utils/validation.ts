@@ -55,12 +55,10 @@ export function validateSubmission({ make, model, badge, logbook }: SubmissionIn
     return { ok: false, error: logbookTooLargeMessage(MAX_LOGBOOK_BYTES) };
   }
 
+  // An empty logbook is fine: the file is what's required, and entries can be added later.
   const logbookText = decodeText(logbook.content);
   if (logbookText === null) {
     return { ok: false, error: LOGBOOK_TYPE_MESSAGE };
-  }
-  if (logbookText.trim() === '') {
-    return { ok: false, error: LOGBOOK_REQUIRED_MESSAGE };
   }
 
   // Reject combinations that don't exist in the catalog.

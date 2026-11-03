@@ -25,10 +25,10 @@ const showError = (message: string) => window.alert(message);
 /**
  * Checks what the browser knows about a picked file without reading it: presence, type
  * (extension + MIME) and size. Returns the error to show, or null if the file can be sent.
- * Whitespace-only content can't be seen without reading the file; the server rejects that.
+ * An empty file is allowed: a logbook can start blank and have entries added later.
  */
 function checkLogbookFile(file: File | undefined): string | null {
-  if (!file || file.size === 0) return LOGBOOK_REQUIRED_MESSAGE;
+  if (!file) return LOGBOOK_REQUIRED_MESSAGE;
   if (!hasAllowedExtension(file.name) || !hasAllowedMimeType(file.type)) return LOGBOOK_TYPE_MESSAGE;
   if (file.size > MAX_LOGBOOK_BYTES) return logbookTooLargeMessage(MAX_LOGBOOK_BYTES);
   return null;

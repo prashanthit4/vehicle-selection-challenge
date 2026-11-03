@@ -10,7 +10,7 @@ import {
   LOGBOOK_TYPE_MESSAGE,
   logbookTooLargeMessage,
 } from '@vehicle/shared/constants';
-import { formatResultPage } from '@vehicle/shared/templates';
+import { EMPTY_LOGBOOK_TEXT, formatResultPage } from '@vehicle/shared/templates';
 
 describe('parseMaxSizeBytes', () => {
   it('parses a whole number of bytes', () => {
@@ -79,6 +79,13 @@ describe('formatResultPage', () => {
 
     expect(page).toBe(
       'Make: bmw\nModel: 130d\nBadge: xDrive 26d\n\nLogbook:\n\n2020/05/01: Initial Service\n2021/06/15: Check-Up\n',
+    );
+  });
+
+  it.each(['', '  \n  '])('shows "no entries yet!!" for an empty logbook %j', (logbookText) => {
+    expect(EMPTY_LOGBOOK_TEXT).toBe('no entries yet!!');
+    expect(formatResultPage({ make: 'bmw', model: '130d', badge: 'xDrive 26d', logbookText })).toBe(
+      'Make: bmw\nModel: 130d\nBadge: xDrive 26d\n\nLogbook:\n\nno entries yet!!\n',
     );
   });
 });

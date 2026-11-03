@@ -23,7 +23,9 @@ const parseMultipart = multer({
   // Buffered in memory (never written to disk); limits.fileSize caps the buffer.
   storage: multer.memoryStorage(),
   limits: UPLOAD_LIMITS,
-  // Reject disallowed types before the file body is buffered.
+  // Reject disallowed types before the file body is buffered. (A form submitted with no file
+  // chosen sends a part with a blank filename; Multer drops it before this runs, so req.file
+  // stays undefined and validation reports a missing logbook.)
   fileFilter: (_req, file, accept) => {
     if (hasAllowedExtension(file.originalname) && hasAllowedMimeType(file.mimetype)) {
       accept(null, true);

@@ -72,15 +72,15 @@ Run a single workspace with `-w`: `npm test -w @vehicle/frontend`, `npm run dev 
 - **Options are derived, not stored:** the Model and Badge lists are recalculated from the catalog on every render.
 - **Quick select ("Select a Vehicle"):** the buttons come from `VITE_QUICK_SELECTS`, defaulting to Tesla Model 3 Performance and BMW 130d xDrive 26d. They can also be passed as `VehicleForm`'s `quickSelects` prop. Each button sets all three values at once, and the section is hidden when the list is empty. The Vitest config sets `VITE_QUICK_SELECTS` itself, so the tests don't depend on `.env`.
 - **Logbook (client side):** `checkLogbookFile()` uses only the browser's `File` metadata (name, type, size) and never reads the content. It runs when a file is picked, so a bad file is cleared immediately with a popup, and again on Submit, which blocks the POST.
-  - **Required:** no file, or a 0-byte file, gives `Please upload logbook`.
+  - **Required:** a file must be chosen. With no file, the message is `Please upload logbook`. An empty or whitespace-only file is allowed, because a logbook can start with no entries and have them added later. Appending isn't built yet.
   - **Type:** the extension must be in `ALLOWED_EXTENSIONS`. The MIME type must be in `ALLOWED_MIME_TYPES` or unknown (`''` or `application/octet-stream`). Otherwise the message is `Logbook should be txt file`.
   - **Size:** a file over `MAX_LOGBOOK_BYTES` gives `Logbook must be 1 MB or smaller.`, with the size taken from the limit.
 - **Errors:** every client-side error is a popup through `showError()`, which calls `window.alert()`, and never appears inline.
 - **Submit:** `<form method="post" encType="multipart/form-data" action={UPLOAD_URL}>`. The dropdowns have no `name`. Hidden inputs post `make`, `model` and `badge`, and the file input posts the file as `name={LOGBOOK_FIELD}` (`logbook`).
 - **Backend `/upload`:**
   - **Parsing:** Multer stores the file in memory with hard limits on every part of the request: `fileSize` = `MAX_LOGBOOK_BYTES`, `files` 1, `fields` 3, `fieldSize` 256 B, `fieldNameSize` 32, `parts` 4, `headerPairs` 20. Its `fileFilter` rejects a bad type before buffering the file.
-  - **Validation:** `validateSubmission` re-checks the type and size, decodes the file as UTF-8 (rejecting invalid UTF-8 or NUL bytes as "not txt"), treats a whitespace-only file as missing, then checks the vehicle against the catalog.
-  - **Success:** `text/plain; charset=utf-8` with `nosniff`. Exact 200 body: `Make: <make>\nModel: <model>\nBadge: <badge>\n\nLogbook:\n\n<text>\n`. The make is printed as the raw lowercase key, e.g. `bmw`.
+  - **Validation:** `validateSubmission` re-checks the type and size, decodes the file as UTF-8 (rejecting invalid UTF-8 or NUL bytes as "not txt"), accepts empty or whitespace-only content, then checks the vehicle against the catalog. A browser form with no file sends a part with a blank filename, which Multer drops, so `req.file` is undefined and the message is `Please upload logbook`.
+  - **Success:** `text/plain; charset=utf-8` with `nosniff`. Exact 200 body: `Make: <make>\nModel: <model>\nBadge: <badge>\n\nLogbook:\n\n<text>\n`. The make is printed as the raw lowercase key, e.g. `bmw`. An empty or whitespace-only logbook is shown as `no entries yet!!` (`EMPTY_LOGBOOK_TEXT` in `shared/templates.ts`).
 - **Backend errors (plain text):**
   - **400** with the validation message.
   - **400** `Logbook should be txt file` from the `fileFilter`.
@@ -159,4 +159,4 @@ The session ran from 2026-10-31 to 2026-11-04. Each entry below is a request and
 - Upgrading Vitest to clear the dev-only `tinypool` advisories. It's a breaking major version.
 - A production build for the backend (bundle with esbuild, or emit with tsc) instead of running `tsx`.
 - Replacing `window.alert()` with a custom modal. The change would be confined to `showError()`.
-- Server-side errors appear as a plain-text page, not a popup. That covers tampered requests and a logbook that is only whitespace, which the browser can't detect without reading the file. It was an accepted trade-off of the backend-rendered `/upload`.
+- Server-side errors appear as a plain-text page, not a popup. That covers tampered requests and binary content in a `.txt`, which the browser can't detect without reading the file. It was an accepted trade-off of the backend-rendered `/upload`.

@@ -153,7 +153,7 @@ Validation, in order:
 - The file name must end in one of `ALLOWED_EXTENSIONS` (`.txt`). The type must be one of `ALLOWED_MIME_TYPES` (`text/plain`), or unknown (`application/octet-stream`, which is how browsers send an unrecognised type).
 - The file must be at most `MAX_LOGBOOK_BYTES`.
 - The content must be valid UTF-8 text with no NUL bytes, so a binary file renamed to `.txt` is rejected as "Logbook should be txt file".
-- A whitespace-only file counts as no logbook.
+- An empty or whitespace-only file is accepted (see [Assumptions](#assumptions)).
 - The vehicle must exist in `shared/vehicleData.json`. Make keys are lowercase, matching the catalog.
 
 Every response is `text/plain; charset=utf-8`, with `X-Content-Type-Options: nosniff` so the echoed text can never be read as HTML.
@@ -161,7 +161,7 @@ Every response is `text/plain; charset=utf-8`, with `X-Content-Type-Options: nos
 | Status | Body | When |
 | ------ | ---- | ---- |
 | 200    | The result page, below | Valid submission |
-| 400    | `Please upload logbook` | No file, or an empty or whitespace-only file |
+| 400    | `Please upload logbook` | No file chosen (including a browser form's blank file part) |
 | 400    | `Logbook should be txt file` | Wrong extension or type, or content that isn't text |
 | 400    | `Unknown vehicle: …` / `make, model and badge are required strings.` | Bad vehicle fields |
 | 400    | `Malformed upload.` | Any other Multer limit (an extra file, the wrong file field, extra or oversized fields, too many parts) or a broken multipart body |
@@ -181,11 +181,21 @@ Logbook:
 2022/02/01: Crashed into a pole. Major repairs.
 ```
 
+If the uploaded logbook is empty or whitespace only, the line under `Logbook:` reads `no entries yet!!` (`EMPTY_LOGBOOK_TEXT` in `shared/templates.ts`).
+
+## Assumptions
+
+- **A logbook file is required, but its contents can be empty.** A new vehicle may not have any service entries yet, so a blank `.txt` file is a valid upload. Entries can be added to it later.
+  - **No file chosen:** "Please upload logbook" pops up and the form isn't submitted. A browser form with no file still sends an empty file part with a blank filename, and the server also treats that as a missing logbook.
+  - **An empty or whitespace-only `.txt` file** is accepted on both sides. The result page shows `no entries yet!!` under `Logbook:`.
+  - **An empty file still has to be the right type.** For example, an empty `.pdf` is rejected with "Logbook should be txt file".
+  - **Appending entries later isn't built yet.** Nothing is stored today: each upload is validated, shown and discarded. Adding entries later would need storage, such as a database or file store, and a way to identify each vehicle's logbook.
+
 ## Design decisions
 
 - **A plain multipart form POST, parsed by Multer.** The browser uploads the file itself, along with hidden `make`, `model` and `badge` fields. The visible dropdowns have no `name`. This is the standard way to upload a file from a form. The size limit applies to the real file bytes, and the server gets the file's own name and type. No CORS is needed, because a normal form navigation isn't a cross-origin fetch.
-- **The frontend never reads the file.** The browser already knows a picked file's name, type and size, which is enough to check presence, type and size before submitting. Only a file containing nothing but whitespace needs its content read, so the server catches that.
-- **Errors split by where they happen.** Everything the form can check (missing logbook, wrong type, size) is a popup, and the POST is blocked. Only problems the browser can't catch, such as a tampered request, a whitespace-only file or binary content in a `.txt`, reach the backend, which replies with a plain-text error page.
+- **The frontend never reads the file.** The browser already knows a picked file's name, type and size, which is enough to check presence, type and size before submitting. Checking that the content is real text needs the bytes, so the server does that.
+- **Errors split by where they happen.** Everything the form can check (missing logbook, wrong type, size) is a popup, and the POST is blocked. Only problems the browser can't catch, such as a tampered request or binary content in a `.txt`, reach the backend, which replies with a plain-text error page.
 - **Belt and braces on the server.** Multer's `fileFilter` and limits reject bad requests before the file is buffered. `validateSubmission` is a pure function that re-checks everything, so it can be unit-tested without HTTP.
 - **Limits come from the environment, parsed by one shared function.** `VITE_MAX_LOGBOOK_BYTES` and `MAX_LOGBOOK_BYTES` both go through `parseMaxSizeBytes()`, with a shared 1 MB fallback. On the server, the limit is Multer's `limits.fileSize`.
 - **Domain rules and wording live in `@vehicle/shared`.** The upload route, allowed extensions and MIME types, error messages and the result-page template are all defined once and used by both apps. The tests use them too. A separate test pins the literal template text and messages, so a change to the shared definitions can't slip through just because the tests reuse them.
@@ -198,7 +208,7 @@ Logbook:
 
 ## Testing
 
-- **Backend** (`backend/test/`, Vitest + Supertest): unit tests for `validateSubmission` in `utils/validation.test.ts`, plus HTTP tests in `app.test.ts`. These send real multipart requests with `.field()` and `.attach()`. They check the exact result page and headers, a missing, empty or blank file, wrong types, binary content, the size limit at and over 1 MB, and every Multer limit (a second file, the wrong file field, an extra field, an oversized field value, an overlong field name, a truncated body). `config.test.ts` lowers `MAX_LOGBOOK_BYTES` and confirms a 413 over HTTP.
-- **Frontend** (`frontend/test/**/*.test.tsx`, Vitest + Testing Library + jsdom): `DropdownSelector` props, drill-down reveal and reset, quick-select filling, the layout, `.txt`-only uploads checked when a file is picked and again on Submit, the 1 MB limit, the "Please upload logbook" popup (no file or a 0-byte file), and the multipart form submit. jsdom can't navigate, so the submit tests listen for the `submit` event after React has handled it. They check whether the POST was blocked and which fields would be posted. jsdom's `FormData` can't see files set by user-event, so the chosen file is asserted on the input instead.
+- **Backend** (`backend/test/`, Vitest + Supertest): unit tests for `validateSubmission` in `utils/validation.test.ts`, plus HTTP tests in `app.test.ts`. These send real multipart requests with `.field()` and `.attach()`. They check the exact result page and headers, a missing file (including a browser's blank file part), empty and whitespace-only files showing "no entries yet!!", wrong types, binary content, the size limit at and over 1 MB, and every Multer limit (a second file, the wrong file field, an extra field, an oversized field value, an overlong field name, a truncated body). `config.test.ts` lowers `MAX_LOGBOOK_BYTES` and confirms a 413 over HTTP.
+- **Frontend** (`frontend/test/**/*.test.tsx`, Vitest + Testing Library + jsdom): `DropdownSelector` props, drill-down reveal and reset, quick-select filling, the layout, `.txt`-only uploads checked when a file is picked and again on Submit, the 1 MB limit, the "Please upload logbook" popup when no file is chosen, an empty file being accepted, and the multipart form submit. jsdom can't navigate, so the submit tests listen for the `submit` event after React has handled it. They check whether the POST was blocked and which fields would be posted. jsdom's `FormData` can't see files set by user-event, so the chosen file is asserted on the input instead.
 
 The frontend tests don't need the backend running.

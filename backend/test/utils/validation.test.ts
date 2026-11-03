@@ -52,10 +52,17 @@ describe('validateSubmission', () => {
     });
   });
 
-  it.each(['', '   \n  '])('treats an empty or whitespace-only file (%j) as no logbook', (content) => {
+  it.each(['', '   \n  '])('accepts an empty or whitespace-only file (%j): entries can come later', (content) => {
     expect(validateSubmission({ ...valid, logbook: txt(content) })).toEqual({
+      ok: true,
+      value: { make: 'ford', model: 'Ranger', badge: 'Raptor', logbookText: content },
+    });
+  });
+
+  it('still rejects an empty file with the wrong type', () => {
+    expect(validateSubmission({ ...valid, logbook: txt('', 'logbook.pdf', 'application/pdf') })).toEqual({
       ok: false,
-      error: LOGBOOK_REQUIRED_MESSAGE,
+      error: LOGBOOK_TYPE_MESSAGE,
     });
   });
 
