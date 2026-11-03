@@ -1,9 +1,9 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import {
   LOGBOOK_ACCEPT,
-  LOGBOOK_READ_ERROR_MESSAGE,
+  LOGBOOK_FIELD,
   LOGBOOK_REQUIRED_MESSAGE,
   LOGBOOK_TYPE_MESSAGE,
   logbookTooLargeMessage,
@@ -24,9 +24,6 @@ const queryField = (name: Field) => screen.queryByLabelText(name);
 
 const logbookInput = () => screen.queryByLabelText('Upload Logbook:') as HTMLInputElement | null;
 const submitButton = () => screen.getByRole('button', { name: 'Submit' });
-
-// Submit is disabled while FileReader runs, so "enabled again" means the read finished.
-const waitForFileRead = () => waitFor(() => expect(submitButton()).toBeEnabled());
 
 const textFile = (content: string, name = 'logbook.txt') =>
   new File([content], name, { type: 'text/plain' });
@@ -69,7 +66,6 @@ function setup(options: Parameters<typeof userEvent.setup>[0] = {}) {
 
 async function uploadLogbook(user: ReturnType<typeof userEvent.setup>, content = 'oil change') {
   await user.upload(logbookInput()!, textFile(content));
-  await waitForFileRead();
 }
 
 async function selectVehicle(
@@ -242,25 +238,7 @@ describe('VehicleForm – logbook upload', () => {
     await selectVehicle(user, 'ford', 'Ranger', 'Raptor');
 
     expect(logbookInput()).toHaveAttribute('accept', LOGBOOK_ACCEPT);
-  });
-
-  it('keeps Submit disabled until the file has been read', async () => {
-    // A FileReader that never finishes, to freeze the "reading" state.
-    vi.stubGlobal(
-      'FileReader',
-      class {
-        onload: (() => void) | null = null;
-        onerror: (() => void) | null = null;
-        readAsText() {}
-      },
-    );
-    const { user } = setup();
-    await selectVehicle(user, 'ford', 'Ranger', 'Raptor');
-    expect(submitButton()).toBeEnabled();
-
-    await user.upload(logbookInput()!, textFile('oil change'));
-
-    expect(submitButton()).toBeDisabled();
+    expect(logbookInput()).toHaveAttribute('name', LOGBOOK_FIELD);
   });
 
   it.each([
@@ -269,7 +247,7 @@ describe('VehicleForm – logbook upload', () => {
     ['logbook.md', 'text/plain'], // plain-text MIME type, but not a .txt file
     ['logbook', 'text/plain'],
     ['logbook.txt', 'application/pdf'], // right extension, explicitly wrong type
-  ])('pops up "Logbook should be txt file" for %s', async (name, type) => {
+  ])('pops up "Logbook should be txt file" as soon as %s is picked', async (name, type) => {
     // applyAccept: false lets the test bypass the picker filter, like drag-and-drop or "All files" would.
     const { user, alertSpy } = setup({ applyAccept: false });
     await selectVehicle(user, 'ford', 'Ranger', 'Raptor');
@@ -277,7 +255,7 @@ describe('VehicleForm – logbook upload', () => {
     await user.upload(logbookInput()!, new File(['data'], name, { type }));
 
     expect(alertSpy).toHaveBeenCalledWith(LOGBOOK_TYPE_MESSAGE);
-    expect(logbookInput()!.files).toHaveLength(0);
+    expect(logbookInput()!.value).toBe('');
   });
 
   it('accepts an upper-case .TXT extension', async () => {
@@ -285,7 +263,15 @@ describe('VehicleForm – logbook upload', () => {
     await selectVehicle(user, 'ford', 'Ranger', 'Raptor');
 
     await user.upload(logbookInput()!, textFile('oil change', 'LOGBOOK.TXT'));
-    await waitForFileRead();
+
+    expect(alertSpy).not.toHaveBeenCalled();
+  });
+
+  it('accepts a .txt file whose type the browser does not know', async () => {
+    const { user, alertSpy } = setup();
+    await selectVehicle(user, 'ford', 'Ranger', 'Raptor');
+
+    await user.upload(logbookInput()!, new File(['oil change'], 'logbook.txt', { type: '' }));
 
     expect(alertSpy).not.toHaveBeenCalled();
   });
@@ -303,13 +289,14 @@ describe('VehicleForm – logbook upload', () => {
     expect(submits[0].blocked).toBe(true);
   });
 
-  it('pops up an error for a file over the configured limit', async () => {
+  it('pops up an error as soon as a file over the configured limit is picked', async () => {
     const { user, alertSpy } = setup();
     await selectVehicle(user, 'ford', 'Ranger', 'Raptor');
 
     await user.upload(logbookInput()!, textFile('a'.repeat(MAX_LOGBOOK_BYTES + 1)));
 
     expect(alertSpy).toHaveBeenCalledWith(logbookTooLargeMessage(MAX_LOGBOOK_BYTES));
+    expect(logbookInput()!.value).toBe('');
   });
 
   it('accepts a file exactly at the limit', async () => {
@@ -321,26 +308,7 @@ describe('VehicleForm – logbook upload', () => {
     expect(alertSpy).not.toHaveBeenCalled();
   });
 
-  it('pops up an error if the file cannot be read', async () => {
-    vi.stubGlobal(
-      'FileReader',
-      class {
-        onload: (() => void) | null = null;
-        onerror: (() => void) | null = null;
-        readAsText() {
-          queueMicrotask(() => this.onerror?.());
-        }
-      },
-    );
-    const { user, alertSpy } = setup();
-    await selectVehicle(user, 'ford', 'Ranger', 'Raptor');
-
-    await user.upload(logbookInput()!, textFile('oil change'));
-
-    await waitFor(() => expect(alertSpy).toHaveBeenCalledWith(LOGBOOK_READ_ERROR_MESSAGE));
-  });
-
-  it('drops a loaded logbook when the Model changes, so it must be uploaded again', async () => {
+  it('drops a picked logbook when the Model changes, so it must be uploaded again', async () => {
     const submits = captureSubmits();
     const { user, alertSpy } = setup();
     await selectVehicle(user, 'ford', 'Ranger', 'Raptor');
@@ -354,36 +322,43 @@ describe('VehicleForm – logbook upload', () => {
     expect(alertSpy).toHaveBeenCalledWith(LOGBOOK_REQUIRED_MESSAGE);
     expect(submits[0].blocked).toBe(true);
   });
+
+  it('drops a picked logbook when switching between quick selects', async () => {
+    const { user } = setup();
+    await user.click(screen.getByRole('button', { name: 'Tesla Model 3 Performance' }));
+    await uploadLogbook(user);
+
+    await user.click(screen.getByRole('button', { name: 'BMW 130d xDrive 26d' }));
+
+    expect(logbookInput()!.value).toBe('');
+  });
 });
 
 describe('VehicleForm – submit', () => {
-  it('is a native POST form targeting the backend /upload route', () => {
+  it('is a native multipart POST form targeting the backend /upload route', () => {
     setup();
     const form = submitButton().closest('form')!;
 
     expect(form.method).toBe('post');
+    expect(form.enctype).toBe('multipart/form-data');
     expect(form.action).toMatch(/\/upload$/); // prefixed with VITE_API_URL when set
-    expect(form.enctype).toBe('application/x-www-form-urlencoded');
   });
 
-  it('lets the browser post make, model, badge and the logbook text when valid', async () => {
+  it('lets the browser post make, model, badge and the logbook file when valid', async () => {
     const submits = captureSubmits();
     const { user, alertSpy } = setup();
 
     await selectVehicle(user, 'bmw', '130d', 'xDrive 26d');
-    await uploadLogbook(user, '2020/05/01: Initial Service\n2021/06/15: Check-Up');
+    await uploadLogbook(user, '2020/05/01: Initial Service');
     await user.click(submitButton());
 
     expect(submits).toHaveLength(1);
     expect(submits[0].blocked).toBe(false);
-    expect(submits[0].fields).toEqual({
-      make: 'bmw',
-      model: '130d',
-      badge: 'xDrive 26d',
-      logbookText: '2020/05/01: Initial Service\n2021/06/15: Check-Up',
-      logbookFileName: 'logbook.txt',
-      logbookMimeType: 'text/plain',
-    });
+    expect(submits[0].fields).toMatchObject({ make: 'bmw', model: '130d', badge: 'xDrive 26d' });
+    // The file input is part of the post. (jsdom's FormData can't see files set by user-event,
+    // so the chosen file itself is asserted on the input.)
+    expect(submits[0].fields[LOGBOOK_FIELD]).toBeInstanceOf(File);
+    expect(logbookInput()!.files?.[0]?.name).toBe('logbook.txt');
     expect(alertSpy).not.toHaveBeenCalled();
   });
 
@@ -397,11 +372,11 @@ describe('VehicleForm – submit', () => {
 
     expect(submits[0]).toMatchObject({
       blocked: false,
-      fields: { make: 'tesla', model: 'Model 3', badge: 'Performance', logbookText: 'oil change' },
+      fields: { make: 'tesla', model: 'Model 3', badge: 'Performance' },
     });
   });
 
-  it('never posts the file itself, only its text and name/type metadata', async () => {
+  it('posts only the vehicle fields and the file: no extra text fields', async () => {
     const submits = captureSubmits();
     const { user } = setup();
 
@@ -409,14 +384,7 @@ describe('VehicleForm – submit', () => {
     await uploadLogbook(user);
     await user.click(submitButton());
 
-    expect(Object.keys(submits[0].fields).sort()).toEqual([
-      'badge',
-      'logbookFileName',
-      'logbookMimeType',
-      'logbookText',
-      'make',
-      'model',
-    ]);
+    expect(Object.keys(submits[0].fields).sort()).toEqual(['badge', LOGBOOK_FIELD, 'make', 'model'].sort());
   });
 
   it('requires a logbook: pops up "Please upload logbook" and blocks the POST', async () => {
@@ -430,15 +398,32 @@ describe('VehicleForm – submit', () => {
     expect(submits[0].blocked).toBe(true);
   });
 
-  it('treats a blank .txt file as no logbook', async () => {
+  it('treats an empty (0-byte) .txt file as no logbook', async () => {
     const submits = captureSubmits();
     const { user, alertSpy } = setup();
 
     await user.click(screen.getByRole('button', { name: 'Tesla Model 3 Performance' }));
-    await uploadLogbook(user, '  \n  ');
+    await uploadLogbook(user, '');
     await user.click(submitButton());
 
-    expect(alertSpy).toHaveBeenCalledWith(LOGBOOK_REQUIRED_MESSAGE);
+    expect(alertSpy).toHaveBeenLastCalledWith(LOGBOOK_REQUIRED_MESSAGE);
+    expect(submits[0].blocked).toBe(true);
+  });
+
+  it('re-checks the file type on submit, before anything is sent', async () => {
+    const submits = captureSubmits();
+    const { user, alertSpy } = setup({ applyAccept: false });
+    await user.click(screen.getByRole('button', { name: 'Tesla Model 3 Performance' }));
+
+    // Bypass the change handler (as a stale or scripted value would) to prove submit checks too.
+    const input = logbookInput()!;
+    Object.defineProperty(input, 'files', {
+      configurable: true,
+      value: [new File(['%PDF'], 'logbook.pdf', { type: 'application/pdf' })],
+    });
+    await user.click(submitButton());
+
+    expect(alertSpy).toHaveBeenCalledWith(LOGBOOK_TYPE_MESSAGE);
     expect(submits[0].blocked).toBe(true);
   });
 

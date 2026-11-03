@@ -51,8 +51,9 @@ describe('file-type constants', () => {
     expect(hasAllowedExtension('txt')).toBe(false);
   });
 
-  it('allow an unknown (empty) MIME type but reject an explicit mismatch', () => {
+  it('allow an unknown MIME type (empty or octet-stream) but reject an explicit mismatch', () => {
     expect(hasAllowedMimeType('')).toBe(true);
+    expect(hasAllowedMimeType('application/octet-stream')).toBe(true); // multipart's "unknown"
     expect(hasAllowedMimeType('text/plain')).toBe(true);
     expect(hasAllowedMimeType('text/markdown')).toBe(false);
   });

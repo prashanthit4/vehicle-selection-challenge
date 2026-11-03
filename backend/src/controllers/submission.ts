@@ -2,15 +2,20 @@ import type { Request, Response } from 'express';
 import { formatResultPage } from '@vehicle/shared/templates';
 import { validateSubmission } from '../utils/validation';
 
-/** POST /upload: validates the submitted form fields and renders them as a plain-text page. */
+/** POST /upload: validates the multipart form (parsed by Multer) and renders a plain-text page. */
 export function uploadVehicle(req: Request, res: Response) {
-  const body = { ...req.body };
-  // Browsers send textarea line breaks as CRLF; store and size-check the text as the file had it.
-  if (typeof body.logbookText === 'string') {
-    body.logbookText = body.logbookText.replace(/\r\n/g, '\n');
-  }
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const result = validateSubmission({
+    make: body.make,
+    model: body.model,
+    badge: body.badge,
+    logbook: req.file && {
+      fileName: req.file.originalname,
+      mimeType: req.file.mimetype,
+      content: req.file.buffer,
+    },
+  });
 
-  const result = validateSubmission(body);
   if (!result.ok) {
     res.status(400).type('text/plain').send(result.error);
     return;

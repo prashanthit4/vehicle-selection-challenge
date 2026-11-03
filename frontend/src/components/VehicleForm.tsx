@@ -1,10 +1,10 @@
 import { useRef, useState, type ChangeEvent, type FormEvent } from 'react';
-import type { VehicleCatalog, VehicleSelection, VehicleSubmission } from '@vehicle/shared/types';
+import type { VehicleCatalog, VehicleSelection } from '@vehicle/shared/types';
 import {
   hasAllowedExtension,
   hasAllowedMimeType,
   LOGBOOK_ACCEPT,
-  LOGBOOK_READ_ERROR_MESSAGE,
+  LOGBOOK_FIELD,
   LOGBOOK_REQUIRED_MESSAGE,
   LOGBOOK_TYPE_MESSAGE,
   logbookTooLargeMessage,
@@ -22,6 +22,18 @@ const toOptions = (values: string[], format: (v: string) => string = (v) => v) =
 // Every user-facing error is shown as a native popup.
 const showError = (message: string) => window.alert(message);
 
+/**
+ * Checks what the browser knows about a picked file without reading it: presence, type
+ * (extension + MIME) and size. Returns the error to show, or null if the file can be sent.
+ * Whitespace-only content can't be seen without reading the file; the server rejects that.
+ */
+function checkLogbookFile(file: File | undefined): string | null {
+  if (!file || file.size === 0) return LOGBOOK_REQUIRED_MESSAGE;
+  if (!hasAllowedExtension(file.name) || !hasAllowedMimeType(file.type)) return LOGBOOK_TYPE_MESSAGE;
+  if (file.size > MAX_LOGBOOK_BYTES) return logbookTooLargeMessage(MAX_LOGBOOK_BYTES);
+  return null;
+}
+
 interface VehicleFormProps {
   /** "Select a Vehicle" buttons. Defaults to the ones configured in VITE_QUICK_SELECTS. */
   quickSelects?: VehicleSelection[];
@@ -31,10 +43,6 @@ export default function VehicleForm({ quickSelects = QUICK_SELECTS }: VehicleFor
   const [make, setMake] = useState('');
   const [model, setModel] = useState('');
   const [badge, setBadge] = useState('');
-  const [logbookText, setLogbookText] = useState('');
-  const [logbookFileName, setLogbookFileName] = useState('');
-  const [logbookMimeType, setLogbookMimeType] = useState('');
-  const [readingFile, setReadingFile] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Options are derived from the current selection, so they're always in sync.
@@ -42,11 +50,9 @@ export default function VehicleForm({ quickSelects = QUICK_SELECTS }: VehicleFor
   const models = make ? Object.keys(catalog[make] ?? {}) : [];
   const badges = make && model ? (catalog[make]?.[model] ?? []) : [];
 
+  // The upload input only exists once a Badge is chosen, so it unmounts (and forgets its file)
+  // when Make or Model change. A quick select can keep it mounted, so clear it explicitly.
   const clearLogbook = () => {
-    setLogbookText('');
-    setLogbookFileName('');
-    setLogbookMimeType('');
-    setReadingFile(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -75,62 +81,34 @@ export default function VehicleForm({ quickSelects = QUICK_SELECTS }: VehicleFor
     clearLogbook();
   };
 
+  // Type and size are checked as soon as a file is picked, so a bad file never sits in the form.
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) {
-      clearLogbook();
-      return;
-    }
+    if (!file) return;
 
-    if (!hasAllowedExtension(file.name) || !hasAllowedMimeType(file.type)) {
+    const error = checkLogbookFile(file);
+    if (error) {
       clearLogbook();
-      showError(LOGBOOK_TYPE_MESSAGE);
-      return;
+      showError(error);
     }
-    if (file.size > MAX_LOGBOOK_BYTES) {
-      clearLogbook();
-      showError(logbookTooLargeMessage(MAX_LOGBOOK_BYTES));
-      return;
-    }
-
-    // Submit stays disabled until the read finishes, so a half-read file is never sent.
-    setReadingFile(true);
-    const reader = new FileReader();
-    reader.onload = () => {
-      setLogbookText(typeof reader.result === 'string' ? reader.result : '');
-      setLogbookFileName(file.name);
-      setLogbookMimeType(file.type);
-      setReadingFile(false);
-    };
-    reader.onerror = () => {
-      clearLogbook();
-      showError(LOGBOOK_READ_ERROR_MESSAGE);
-    };
-    reader.readAsText(file);
   };
 
-  // Client-side checks only. When they pass, the browser does a normal form POST to
-  // UPLOAD_URL and navigates to the page the backend renders.
+  // Client-side checks only. When they pass, the browser POSTs the form (including the file) as
+  // multipart/form-data to UPLOAD_URL and navigates to the page the backend renders.
   const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     if (!make || !model || !badge) {
       e.preventDefault();
       return;
     }
-    if (logbookText.trim() === '') {
+    const error = checkLogbookFile(fileInputRef.current?.files?.[0]);
+    if (error) {
       e.preventDefault();
-      showError(LOGBOOK_REQUIRED_MESSAGE);
+      showError(error);
     }
   };
 
-  // What the hidden fields below post. Typed so it stays in step with the backend contract.
-  const submission: VehicleSubmission = {
-    make,
-    model,
-    badge,
-    logbookText,
-    logbookFileName,
-    logbookMimeType,
-  };
+  // What the hidden fields below post alongside the file.
+  const selection: VehicleSelection = { make, model, badge };
 
   const isMatch = (p: VehicleSelection) => p.make === make && p.model === model && p.badge === badge;
 
@@ -169,15 +147,17 @@ export default function VehicleForm({ quickSelects = QUICK_SELECTS }: VehicleFor
   ];
 
   return (
-    <form className="vehicle-form" method="post" action={UPLOAD_URL} onSubmit={handleSubmit}>
-      {/* The visible controls are unnamed; only these fields are posted. The logbook goes as
-          text (read via FileReader), so the backend needs no multipart parsing. */}
-      <input type="hidden" name="make" value={submission.make} />
-      <input type="hidden" name="model" value={submission.model} />
-      <input type="hidden" name="badge" value={submission.badge} />
-      <textarea name="logbookText" value={submission.logbookText} readOnly hidden />
-      <input type="hidden" name="logbookFileName" value={submission.logbookFileName} />
-      <input type="hidden" name="logbookMimeType" value={submission.logbookMimeType} />
+    <form
+      className="vehicle-form"
+      method="post"
+      encType="multipart/form-data"
+      action={UPLOAD_URL}
+      onSubmit={handleSubmit}
+    >
+      {/* The dropdowns are unnamed; these hidden fields plus the file input are what's posted. */}
+      <input type="hidden" name="make" value={selection.make} />
+      <input type="hidden" name="model" value={selection.model} />
+      <input type="hidden" name="badge" value={selection.badge} />
 
       {dropdowns
         .filter(({ visible }) => visible)
@@ -190,6 +170,7 @@ export default function VehicleForm({ quickSelects = QUICK_SELECTS }: VehicleFor
           <label htmlFor="logbook">Upload Logbook:</label>
           <input
             id="logbook"
+            name={LOGBOOK_FIELD}
             ref={fileInputRef}
             type="file"
             accept={LOGBOOK_ACCEPT}
@@ -198,7 +179,7 @@ export default function VehicleForm({ quickSelects = QUICK_SELECTS }: VehicleFor
         </div>
       )}
 
-      <button type="submit" disabled={!badge || readingFile}>
+      <button type="submit" disabled={!badge}>
         Submit
       </button>
       {quickSelects.length > 0 && (

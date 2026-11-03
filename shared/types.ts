@@ -10,12 +10,11 @@ export interface VehicleSelection {
   badge: string;
 }
 
-/** Form fields of POST /upload. */
+/**
+ * A validated submission, as rendered on the /upload page. Over the wire, POST /upload is
+ * multipart/form-data: make, model and badge as text fields plus the logbook file (LOGBOOK_FIELD).
+ */
 export interface VehicleSubmission extends VehicleSelection {
-  /** Plain-text logbook contents read client-side. Required, within the configured size limit. */
+  /** The uploaded logbook file's contents, decoded as UTF-8. */
   logbookText: string;
-  /** Original file name, checked against ALLOWED_EXTENSIONS. */
-  logbookFileName: string;
-  /** Browser-reported MIME type (may be empty), checked against ALLOWED_MIME_TYPES. */
-  logbookMimeType: string;
 }

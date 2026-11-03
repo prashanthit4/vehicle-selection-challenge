@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import request from 'supertest';
 import { DEFAULT_MAX_LOGBOOK_BYTES } from '@vehicle/shared/config';
 
 // config.ts reads process.env at module load, so re-import it after stubbing.
@@ -20,28 +21,24 @@ describe('backend config', () => {
     expect((await loadConfig()).MAX_LOGBOOK_BYTES).toBe(DEFAULT_MAX_LOGBOOK_BYTES);
   });
 
-  it('derives the body cap from the logbook limit unless MAX_BODY_SIZE is set', async () => {
+  it('caps Multer’s file size at the logbook limit', async () => {
     vi.stubEnv('MAX_LOGBOOK_BYTES', '2048');
-    vi.stubEnv('MAX_BODY_SIZE', '');
-    expect((await loadConfig()).MAX_BODY_SIZE).toBe(4 * 2048);
-
-    vi.stubEnv('MAX_BODY_SIZE', '10mb');
-    expect((await loadConfig()).MAX_BODY_SIZE).toBe('10mb');
+    expect((await loadConfig()).UPLOAD_LIMITS.fileSize).toBe(2048);
   });
 
-  it('enforces a lowered limit end to end', async () => {
+  it('enforces a lowered limit end to end over HTTP', async () => {
     vi.stubEnv('MAX_LOGBOOK_BYTES', '10');
     vi.resetModules();
-    const { validateSubmission } = await import('../src/utils/validation');
-    const result = validateSubmission({
-      make: 'ford',
-      model: 'Ranger',
-      badge: 'Raptor',
-      logbookText: 'eleven char',
-      logbookFileName: 'logbook.txt',
-      logbookMimeType: 'text/plain',
-    });
+    const { app } = await import('../src/app');
 
-    expect(result).toEqual({ ok: false, error: 'Logbook must be 10 bytes or smaller.' });
+    const res = await request(app)
+      .post('/upload')
+      .field('make', 'ford')
+      .field('model', 'Ranger')
+      .field('badge', 'Raptor')
+      .attach('logbook', Buffer.from('eleven char'), { filename: 'logbook.txt', contentType: 'text/plain' });
+
+    expect(res.status).toBe(413);
+    expect(res.text).toBe('Logbook must be 10 bytes or smaller.');
   });
 });

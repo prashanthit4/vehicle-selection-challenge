@@ -14,10 +14,12 @@
     "@vehicle/shared": "1.0.0",
     "dotenv": "^16.6.1",
     "express": "^5.1.0",
+    "multer": "^2.5.0",
     "tsx": "^4.19.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
+    "@types/multer": "^2.3.0",
     "@types/node": "^22.10.0",
     "@types/supertest": "^6.0.3",
     "supertest": "^7.3.1",
