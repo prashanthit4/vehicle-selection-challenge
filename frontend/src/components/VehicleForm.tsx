@@ -1,4 +1,4 @@
-import { useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useState, type ChangeEvent, type FormEvent } from 'react';
 import type { VehicleCatalog, VehicleSelection } from '@vehicle/shared/types';
 import {
   hasAllowedExtension,
@@ -10,11 +10,18 @@ import {
   logbookTooLargeMessage,
 } from '@vehicle/shared/constants';
 import { formatMake } from '@vehicle/shared/utils';
+import quickSelectsJson from '@vehicle/shared/quickSelects.json';
 import catalogJson from '@vehicle/shared/vehicleData.json';
-import { MAX_LOGBOOK_BYTES, QUICK_SELECTS, UPLOAD_URL } from '../config';
+import { MAX_LOGBOOK_BYTES, UPLOAD_URL } from '../config';
 import DropdownSelector, { type DropdownSelectorProps } from './DropdownSelector';
 
 const catalog: VehicleCatalog = catalogJson;
+
+// Same make → model → badges shape as the catalog; each badge becomes one button.
+const QUICK_SELECTS: VehicleSelection[] = Object.entries(quickSelectsJson as VehicleCatalog).flatMap(
+  ([make, models]) =>
+    Object.entries(models).flatMap(([model, badges]) => badges.map((badge) => ({ make, model, badge }))),
+);
 
 const toOptions = (values: string[], format: (v: string) => string = (v) => v) =>
   values.map((value) => ({ value, label: format(value) }));
@@ -35,7 +42,7 @@ function checkLogbookFile(file: File | undefined): string | null {
 }
 
 interface VehicleFormProps {
-  /** "Select a Vehicle" buttons. Defaults to the ones configured in VITE_QUICK_SELECTS. */
+  /** "Select a Vehicle" buttons. Defaults to the ones in shared/quickSelects.json. */
   quickSelects?: VehicleSelection[];
 }
 
@@ -43,7 +50,8 @@ export default function VehicleForm({ quickSelects = QUICK_SELECTS }: VehicleFor
   const [make, setMake] = useState('');
   const [model, setModel] = useState('');
   const [badge, setBadge] = useState('');
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Bumping the key remounts the file input, which is how an <input type="file"> is cleared.
+  const [fileInputKey, setFileInputKey] = useState(0);
 
   // Options are derived from the current selection, so they're always in sync.
   const makes = Object.keys(catalog);
@@ -52,9 +60,7 @@ export default function VehicleForm({ quickSelects = QUICK_SELECTS }: VehicleFor
 
   // The upload input only exists once a Badge is chosen, so it unmounts (and forgets its file)
   // when Make or Model change. A quick select can keep it mounted, so clear it explicitly.
-  const clearLogbook = () => {
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
+  const clearLogbook = () => setFileInputKey((key) => key + 1);
 
   const handleMakeChange = (value: string) => {
     setMake(value);
@@ -100,7 +106,8 @@ export default function VehicleForm({ quickSelects = QUICK_SELECTS }: VehicleFor
       e.preventDefault();
       return;
     }
-    const error = checkLogbookFile(fileInputRef.current?.files?.[0]);
+    const fileInput = e.currentTarget.elements.namedItem(LOGBOOK_FIELD) as HTMLInputElement | null;
+    const error = checkLogbookFile(fileInput?.files?.[0]);
     if (error) {
       e.preventDefault();
       showError(error);
@@ -171,7 +178,7 @@ export default function VehicleForm({ quickSelects = QUICK_SELECTS }: VehicleFor
           <input
             id="logbook"
             name={LOGBOOK_FIELD}
-            ref={fileInputRef}
+            key={fileInputKey}
             type="file"
             accept={LOGBOOK_ACCEPT}
             onChange={handleFileChange}

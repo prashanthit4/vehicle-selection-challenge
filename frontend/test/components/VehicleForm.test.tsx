@@ -8,6 +8,9 @@ import {
   LOGBOOK_TYPE_MESSAGE,
   logbookTooLargeMessage,
 } from '@vehicle/shared/constants';
+import quickSelectsJson from '@vehicle/shared/quickSelects.json';
+import type { VehicleCatalog } from '@vehicle/shared/types';
+import catalogJson from '@vehicle/shared/vehicleData.json';
 import { MAX_LOGBOOK_BYTES } from '../../src/config';
 import VehicleForm from '../../src/components/VehicleForm';
 
@@ -180,8 +183,22 @@ describe('VehicleForm – quick select', () => {
 });
 
 describe('VehicleForm – layout', () => {
-  it('builds the quick-select buttons from VITE_QUICK_SELECTS by default', () => {
-    setup(); // vite.config.ts pins VITE_QUICK_SELECTS for tests
+  it('only lists quick selects that exist in the catalog, and at least two of them', () => {
+    // quickSelects.json uses the catalog's shape; a typo there would give a button that can't fill
+    // the dropdowns, so check every make → model → badge against vehicleData.json.
+    const catalog: VehicleCatalog = catalogJson;
+    const entries = Object.entries(quickSelectsJson as VehicleCatalog).flatMap(([make, models]) =>
+      Object.entries(models).flatMap(([model, badges]) => badges.map((badge) => ({ make, model, badge }))),
+    );
+
+    expect(entries.length).toBeGreaterThanOrEqual(2); // the brief asks for at least two
+    for (const { make, model, badge } of entries) {
+      expect(catalog[make]?.[model], `${make} ${model}`).toContain(badge);
+    }
+  });
+
+  it('builds the quick-select buttons from shared/quickSelects.json by default', () => {
+    setup();
 
     expect(screen.getByRole('button', { name: 'Tesla Model 3 Performance' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'BMW 130d xDrive 26d' })).toBeInTheDocument();
@@ -209,7 +226,7 @@ describe('VehicleForm – layout', () => {
     const heading = screen.getByRole('heading', { name: 'Select a Vehicle' });
     const buttons = Array.from(heading.parentElement!.querySelectorAll('button')).map((b) => b.textContent);
 
-    expect(buttons).toEqual(['Tesla Model 3 Performance', 'BMW 130d xDrive 26d']);
+    expect(buttons).toEqual(['Tesla Model 3 Performance', 'BMW 130d xDrive 26d', 'Ford Ranger Raptor']);
   });
 
   it('keeps dropdown labels for screen readers but hides them visually', async () => {

@@ -6,6 +6,7 @@
   "exports": {
     "./config": "./config.ts",
     "./constants": "./constants.ts",
+    "./quickSelects.json": "./quickSelects.json",
     "./templates": "./templates.ts",
     "./types": "./types.ts",
     "./utils": "./utils.ts",
