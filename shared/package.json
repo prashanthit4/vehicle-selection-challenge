@@ -4,8 +4,11 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./config": "./config.ts",
+    "./constants": "./constants.ts",
+    "./templates": "./templates.ts",
     "./types": "./types.ts",
-    "./vehicleData.json": "./vehicleData.json",
-    "./utils": "./utils.ts"
+    "./utils": "./utils.ts",
+    "./vehicleData.json": "./vehicleData.json"
   }
 }

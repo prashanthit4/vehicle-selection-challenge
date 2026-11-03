@@ -12,6 +12,10 @@ export interface VehicleSelection {
 
 /** Form fields of POST /upload. */
 export interface VehicleSubmission extends VehicleSelection {
-  /** Plain-text logbook contents read client-side. Required, at most 1 MB. */
+  /** Plain-text logbook contents read client-side. Required, within the configured size limit. */
   logbookText: string;
+  /** Original file name, checked against ALLOWED_EXTENSIONS. */
+  logbookFileName: string;
+  /** Browser-reported MIME type (may be empty), checked against ALLOWED_MIME_TYPES. */
+  logbookMimeType: string;
 }

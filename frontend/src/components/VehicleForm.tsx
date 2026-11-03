@@ -1,19 +1,20 @@
 import { useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import type { VehicleCatalog, VehicleSelection, VehicleSubmission } from '@vehicle/shared/types';
-import { formatMake, MAX_LOGBOOK_BYTES } from '@vehicle/shared/utils';
+import {
+  hasAllowedExtension,
+  hasAllowedMimeType,
+  LOGBOOK_ACCEPT,
+  LOGBOOK_READ_ERROR_MESSAGE,
+  LOGBOOK_REQUIRED_MESSAGE,
+  LOGBOOK_TYPE_MESSAGE,
+  logbookTooLargeMessage,
+} from '@vehicle/shared/constants';
+import { formatMake } from '@vehicle/shared/utils';
 import catalogJson from '@vehicle/shared/vehicleData.json';
+import { MAX_LOGBOOK_BYTES, QUICK_SELECTS, UPLOAD_URL } from '../config';
 import DropdownSelector, { type DropdownSelectorProps } from './DropdownSelector';
 
 const catalog: VehicleCatalog = catalogJson;
-
-// Empty when unset → same-origin POST to /upload.
-const API_URL = import.meta.env.VITE_API_URL ?? '';
-const UPLOAD_URL = `${API_URL}/upload`;
-
-const QUICK_SELECTS: VehicleSelection[] = [
-  { make: 'tesla', model: 'Model 3', badge: 'Performance' },
-  { make: 'bmw', model: '130d', badge: 'xDrive 26d' },
-];
 
 const toOptions = (values: string[], format: (v: string) => string = (v) => v) =>
   values.map((value) => ({ value, label: format(value) }));
@@ -21,11 +22,18 @@ const toOptions = (values: string[], format: (v: string) => string = (v) => v) =
 // Every user-facing error is shown as a native popup.
 const showError = (message: string) => window.alert(message);
 
-export default function VehicleForm() {
+interface VehicleFormProps {
+  /** "Select a Vehicle" buttons. Defaults to the ones configured in VITE_QUICK_SELECTS. */
+  quickSelects?: VehicleSelection[];
+}
+
+export default function VehicleForm({ quickSelects = QUICK_SELECTS }: VehicleFormProps) {
   const [make, setMake] = useState('');
   const [model, setModel] = useState('');
   const [badge, setBadge] = useState('');
   const [logbookText, setLogbookText] = useState('');
+  const [logbookFileName, setLogbookFileName] = useState('');
+  const [logbookMimeType, setLogbookMimeType] = useState('');
   const [readingFile, setReadingFile] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -36,6 +44,8 @@ export default function VehicleForm() {
 
   const clearLogbook = () => {
     setLogbookText('');
+    setLogbookFileName('');
+    setLogbookMimeType('');
     setReadingFile(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
@@ -72,14 +82,14 @@ export default function VehicleForm() {
       return;
     }
 
-    if (!file.name.toLowerCase().endsWith('.txt')) {
+    if (!hasAllowedExtension(file.name) || !hasAllowedMimeType(file.type)) {
       clearLogbook();
-      showError('Logbook should be txt file');
+      showError(LOGBOOK_TYPE_MESSAGE);
       return;
     }
     if (file.size > MAX_LOGBOOK_BYTES) {
       clearLogbook();
-      showError('Logbook must be 1 MB or smaller.');
+      showError(logbookTooLargeMessage(MAX_LOGBOOK_BYTES));
       return;
     }
 
@@ -88,11 +98,13 @@ export default function VehicleForm() {
     const reader = new FileReader();
     reader.onload = () => {
       setLogbookText(typeof reader.result === 'string' ? reader.result : '');
+      setLogbookFileName(file.name);
+      setLogbookMimeType(file.type);
       setReadingFile(false);
-      };
+    };
     reader.onerror = () => {
       clearLogbook();
-      showError('Could not read the logbook file.');
+      showError(LOGBOOK_READ_ERROR_MESSAGE);
     };
     reader.readAsText(file);
   };
@@ -106,12 +118,19 @@ export default function VehicleForm() {
     }
     if (logbookText.trim() === '') {
       e.preventDefault();
-      showError('Please upload logbook');
+      showError(LOGBOOK_REQUIRED_MESSAGE);
     }
   };
 
   // What the hidden fields below post. Typed so it stays in step with the backend contract.
-  const submission: VehicleSubmission = { make, model, badge, logbookText };
+  const submission: VehicleSubmission = {
+    make,
+    model,
+    badge,
+    logbookText,
+    logbookFileName,
+    logbookMimeType,
+  };
 
   const isMatch = (p: VehicleSelection) => p.make === make && p.model === model && p.badge === badge;
 
@@ -157,6 +176,8 @@ export default function VehicleForm() {
       <input type="hidden" name="model" value={submission.model} />
       <input type="hidden" name="badge" value={submission.badge} />
       <textarea name="logbookText" value={submission.logbookText} readOnly hidden />
+      <input type="hidden" name="logbookFileName" value={submission.logbookFileName} />
+      <input type="hidden" name="logbookMimeType" value={submission.logbookMimeType} />
 
       {dropdowns
         .filter(({ visible }) => visible)
@@ -171,7 +192,7 @@ export default function VehicleForm() {
             id="logbook"
             ref={fileInputRef}
             type="file"
-            accept=".txt"
+            accept={LOGBOOK_ACCEPT}
             onChange={handleFileChange}
           />
         </div>
@@ -180,19 +201,21 @@ export default function VehicleForm() {
       <button type="submit" disabled={!badge || readingFile}>
         Submit
       </button>
-      <section className="quick-select" aria-labelledby="quick-select-heading">
-        <h2 id="quick-select-heading">Select a Vehicle</h2>
-        {QUICK_SELECTS.map((preset) => (
-          <button
-            key={`${preset.make}-${preset.model}-${preset.badge}`}
-            type="button"
-            onClick={() => applyQuickSelect(preset)}
-            aria-pressed={isMatch(preset)}
-          >
-            {formatMake(preset.make)} {preset.model} {preset.badge}
-          </button>
-        ))}
-      </section>
+      {quickSelects.length > 0 && (
+        <section className="quick-select" aria-labelledby="quick-select-heading">
+          <h2 id="quick-select-heading">Select a Vehicle</h2>
+          {quickSelects.map((preset) => (
+            <button
+              key={`${preset.make}-${preset.model}-${preset.badge}`}
+              type="button"
+              onClick={() => applyQuickSelect(preset)}
+              aria-pressed={isMatch(preset)}
+            >
+              {formatMake(preset.make)} {preset.model} {preset.badge}
+            </button>
+          ))}
+        </section>
+      )}
     </form>
   );
 }

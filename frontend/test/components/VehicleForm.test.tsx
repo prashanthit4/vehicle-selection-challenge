@@ -1,7 +1,14 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
-import { MAX_LOGBOOK_BYTES } from '@vehicle/shared/utils';
+import {
+  LOGBOOK_ACCEPT,
+  LOGBOOK_READ_ERROR_MESSAGE,
+  LOGBOOK_REQUIRED_MESSAGE,
+  LOGBOOK_TYPE_MESSAGE,
+  logbookTooLargeMessage,
+} from '@vehicle/shared/constants';
+import { MAX_LOGBOOK_BYTES } from '../../src/config';
 import VehicleForm from '../../src/components/VehicleForm';
 
 const optionLabels = (select: HTMLElement) =>
@@ -177,6 +184,30 @@ describe('VehicleForm – quick select', () => {
 });
 
 describe('VehicleForm – layout', () => {
+  it('builds the quick-select buttons from VITE_QUICK_SELECTS by default', () => {
+    setup(); // vite.config.ts pins VITE_QUICK_SELECTS for tests
+
+    expect(screen.getByRole('button', { name: 'Tesla Model 3 Performance' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'BMW 130d xDrive 26d' })).toBeInTheDocument();
+  });
+
+  it('pre-fills the dropdowns from any configured quick select', async () => {
+    const user = userEvent.setup();
+    render(<VehicleForm quickSelects={[{ make: 'ford', model: 'Falcon Ute', badge: 'XR6 Turbo' }]} />);
+
+    await user.click(screen.getByRole('button', { name: 'Ford Falcon Ute XR6 Turbo' }));
+
+    expect(field('Make')).toHaveValue('ford');
+    expect(field('Model')).toHaveValue('Falcon Ute');
+    expect(field('Badge')).toHaveValue('XR6 Turbo');
+  });
+
+  it('hides the "Select a Vehicle" section when no quick selects are configured', () => {
+    render(<VehicleForm quickSelects={[]} />);
+
+    expect(screen.queryByRole('heading', { name: 'Select a Vehicle' })).not.toBeInTheDocument();
+  });
+
   it('lists the quick-select vehicles under a "Select a Vehicle" heading', () => {
     setup();
     const heading = screen.getByRole('heading', { name: 'Select a Vehicle' });
@@ -206,11 +237,11 @@ describe('VehicleForm – logbook upload', () => {
     expect(alertSpy).not.toHaveBeenCalled();
   });
 
-  it('only offers .txt files in the file picker', async () => {
+  it('configures the file picker from the shared allowed extensions and MIME types', async () => {
     const { user } = setup();
     await selectVehicle(user, 'ford', 'Ranger', 'Raptor');
 
-    expect(logbookInput()).toHaveAttribute('accept', '.txt');
+    expect(logbookInput()).toHaveAttribute('accept', LOGBOOK_ACCEPT);
   });
 
   it('keeps Submit disabled until the file has been read', async () => {
@@ -237,6 +268,7 @@ describe('VehicleForm – logbook upload', () => {
     ['logbook.csv', 'text/csv'],
     ['logbook.md', 'text/plain'], // plain-text MIME type, but not a .txt file
     ['logbook', 'text/plain'],
+    ['logbook.txt', 'application/pdf'], // right extension, explicitly wrong type
   ])('pops up "Logbook should be txt file" for %s', async (name, type) => {
     // applyAccept: false lets the test bypass the picker filter, like drag-and-drop or "All files" would.
     const { user, alertSpy } = setup({ applyAccept: false });
@@ -244,7 +276,7 @@ describe('VehicleForm – logbook upload', () => {
 
     await user.upload(logbookInput()!, new File(['data'], name, { type }));
 
-    expect(alertSpy).toHaveBeenCalledWith('Logbook should be txt file');
+    expect(alertSpy).toHaveBeenCalledWith(LOGBOOK_TYPE_MESSAGE);
     expect(logbookInput()!.files).toHaveLength(0);
   });
 
@@ -267,20 +299,20 @@ describe('VehicleForm – logbook upload', () => {
     await user.upload(logbookInput()!, new File(['%PDF'], 'logbook.pdf', { type: 'application/pdf' }));
     await user.click(submitButton());
 
-    expect(alertSpy).toHaveBeenLastCalledWith('Please upload logbook');
+    expect(alertSpy).toHaveBeenLastCalledWith(LOGBOOK_REQUIRED_MESSAGE);
     expect(submits[0].blocked).toBe(true);
   });
 
-  it('pops up an error for a file over 1 MB', async () => {
+  it('pops up an error for a file over the configured limit', async () => {
     const { user, alertSpy } = setup();
     await selectVehicle(user, 'ford', 'Ranger', 'Raptor');
 
     await user.upload(logbookInput()!, textFile('a'.repeat(MAX_LOGBOOK_BYTES + 1)));
 
-    expect(alertSpy).toHaveBeenCalledWith('Logbook must be 1 MB or smaller.');
+    expect(alertSpy).toHaveBeenCalledWith(logbookTooLargeMessage(MAX_LOGBOOK_BYTES));
   });
 
-  it('accepts a file of exactly 1 MB', async () => {
+  it('accepts a file exactly at the limit', async () => {
     const { user, alertSpy } = setup();
     await selectVehicle(user, 'ford', 'Ranger', 'Raptor');
 
@@ -305,7 +337,7 @@ describe('VehicleForm – logbook upload', () => {
 
     await user.upload(logbookInput()!, textFile('oil change'));
 
-    await waitFor(() => expect(alertSpy).toHaveBeenCalledWith('Could not read the logbook file.'));
+    await waitFor(() => expect(alertSpy).toHaveBeenCalledWith(LOGBOOK_READ_ERROR_MESSAGE));
   });
 
   it('drops a loaded logbook when the Model changes, so it must be uploaded again', async () => {
@@ -319,7 +351,7 @@ describe('VehicleForm – logbook upload', () => {
     expect(logbookInput()!.files).toHaveLength(0);
 
     await user.click(submitButton());
-    expect(alertSpy).toHaveBeenCalledWith('Please upload logbook');
+    expect(alertSpy).toHaveBeenCalledWith(LOGBOOK_REQUIRED_MESSAGE);
     expect(submits[0].blocked).toBe(true);
   });
 });
@@ -349,6 +381,8 @@ describe('VehicleForm – submit', () => {
       model: '130d',
       badge: 'xDrive 26d',
       logbookText: '2020/05/01: Initial Service\n2021/06/15: Check-Up',
+      logbookFileName: 'logbook.txt',
+      logbookMimeType: 'text/plain',
     });
     expect(alertSpy).not.toHaveBeenCalled();
   });
@@ -367,7 +401,7 @@ describe('VehicleForm – submit', () => {
     });
   });
 
-  it('never posts the file itself, only its text', async () => {
+  it('never posts the file itself, only its text and name/type metadata', async () => {
     const submits = captureSubmits();
     const { user } = setup();
 
@@ -375,7 +409,14 @@ describe('VehicleForm – submit', () => {
     await uploadLogbook(user);
     await user.click(submitButton());
 
-    expect(Object.keys(submits[0].fields).sort()).toEqual(['badge', 'logbookText', 'make', 'model']);
+    expect(Object.keys(submits[0].fields).sort()).toEqual([
+      'badge',
+      'logbookFileName',
+      'logbookMimeType',
+      'logbookText',
+      'make',
+      'model',
+    ]);
   });
 
   it('requires a logbook: pops up "Please upload logbook" and blocks the POST', async () => {
@@ -385,7 +426,7 @@ describe('VehicleForm – submit', () => {
     await user.click(screen.getByRole('button', { name: 'Tesla Model 3 Performance' }));
     await user.click(submitButton());
 
-    expect(alertSpy).toHaveBeenCalledWith('Please upload logbook');
+    expect(alertSpy).toHaveBeenCalledWith(LOGBOOK_REQUIRED_MESSAGE);
     expect(submits[0].blocked).toBe(true);
   });
 
@@ -397,7 +438,7 @@ describe('VehicleForm – submit', () => {
     await uploadLogbook(user, '  \n  ');
     await user.click(submitButton());
 
-    expect(alertSpy).toHaveBeenCalledWith('Please upload logbook');
+    expect(alertSpy).toHaveBeenCalledWith(LOGBOOK_REQUIRED_MESSAGE);
     expect(submits[0].blocked).toBe(true);
   });
 
@@ -409,6 +450,6 @@ describe('VehicleForm – submit', () => {
     await user.click(submitButton());
 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-    expect(screen.queryByText('Please upload logbook')).not.toBeInTheDocument();
+    expect(screen.queryByText(LOGBOOK_REQUIRED_MESSAGE)).not.toBeInTheDocument();
   });
 });

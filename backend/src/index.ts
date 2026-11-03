@@ -1,8 +1,7 @@
-// Must be the first import so env vars are set before app.ts reads them.
+// Must be the first import so env vars are set before config.ts reads them.
 import 'dotenv/config';
 import { app } from './app';
-
-const PORT = Number(process.env.PORT) || 3000;
+import { PORT } from './config';
 
 app.listen(PORT, () => {
   console.log(`Backend listening on http://localhost:${PORT}`);

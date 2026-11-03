@@ -1,8 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_LOGBOOK_BYTES } from '@vehicle/shared/utils';
+import {
+  LOGBOOK_REQUIRED_MESSAGE,
+  LOGBOOK_TYPE_MESSAGE,
+  logbookTooLargeMessage,
+} from '@vehicle/shared/constants';
+import type { VehicleSubmission } from '@vehicle/shared/types';
+import { MAX_LOGBOOK_BYTES } from '../../src/config';
 import { validateSubmission } from '../../src/utils/validation';
 
-const valid = { make: 'ford', model: 'Ranger', badge: 'Raptor', logbookText: '10,000km service' };
+const valid: VehicleSubmission = {
+  make: 'ford',
+  model: 'Ranger',
+  badge: 'Raptor',
+  logbookText: '10,000km service',
+  logbookFileName: 'logbook.txt',
+  logbookMimeType: 'text/plain',
+};
 
 describe('validateSubmission', () => {
   it('accepts a valid catalog combination', () => {
@@ -12,7 +25,7 @@ describe('validateSubmission', () => {
   it.each(['', '   \n  '])('requires a logbook: rejects %j', (logbookText) => {
     expect(validateSubmission({ ...valid, logbookText })).toEqual({
       ok: false,
-      error: 'Please upload logbook',
+      error: LOGBOOK_REQUIRED_MESSAGE,
     });
   });
 
@@ -31,13 +44,33 @@ describe('validateSubmission', () => {
     expect(validateSubmission({ ...valid, [key]: 123 }).ok).toBe(false);
   });
 
-  it('accepts a logbook of exactly 1 MB', () => {
+  it('accepts a logbook exactly at the limit', () => {
     expect(validateSubmission({ ...valid, logbookText: 'a'.repeat(MAX_LOGBOOK_BYTES) }).ok).toBe(true);
   });
 
-  it('rejects a logbook over 1 MB', () => {
+  it('rejects a logbook over the limit', () => {
     const result = validateSubmission({ ...valid, logbookText: 'a'.repeat(MAX_LOGBOOK_BYTES + 1) });
-    expect(result).toEqual({ ok: false, error: 'Logbook must be 1 MB or smaller.' });
+    expect(result).toEqual({ ok: false, error: logbookTooLargeMessage(MAX_LOGBOOK_BYTES) });
+  });
+
+  it.each([
+    ['logbook.pdf', 'text/plain'],
+    ['logbook.md', 'text/plain'],
+    ['logbook.txt', 'application/pdf'],
+    [undefined, 'text/plain'],
+    ['logbook.txt', undefined],
+  ])('rejects file name %j with type %j', (logbookFileName, logbookMimeType) => {
+    expect(validateSubmission({ ...valid, logbookFileName, logbookMimeType })).toEqual({
+      ok: false,
+      error: LOGBOOK_TYPE_MESSAGE,
+    });
+  });
+
+  it.each([
+    ['LOGBOOK.TXT', 'text/plain'],
+    ['logbook.txt', ''], // browsers send an empty type for files they don't recognise
+  ])('accepts file name %j with type %j', (logbookFileName, logbookMimeType) => {
+    expect(validateSubmission({ ...valid, logbookFileName, logbookMimeType }).ok).toBe(true);
   });
 
   it('measures the logbook limit in UTF-8 bytes, not characters', () => {
@@ -57,7 +90,7 @@ describe('validateSubmission', () => {
     { make: 'ford', model: 'Falcon', badge: 'Raptor' },
     { make: 'Ford', model: 'Ranger', badge: 'Raptor' }, // keys are case-sensitive
   ])('rejects a combination not in the catalog: $make $model $badge', (vehicle) => {
-    const result = validateSubmission({ ...vehicle, logbookText: 'oil change' });
+    const result = validateSubmission({ ...valid, ...vehicle });
     expect(result).toEqual({ ok: false, error: expect.stringContaining('Unknown vehicle') });
   });
 });

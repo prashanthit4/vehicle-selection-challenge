@@ -1,9 +1,6 @@
 import type { Request, Response } from 'express';
-import type { VehicleSubmission } from '@vehicle/shared/types';
+import { formatResultPage } from '@vehicle/shared/templates';
 import { validateSubmission } from '../utils/validation';
-
-const formatResultPage = ({ make, model, badge, logbookText }: VehicleSubmission) =>
-  `Make: ${make}\nModel: ${model}\nBadge: ${badge}\n\nLogbook:\n\n${logbookText}\n`;
 
 /** POST /upload: validates the submitted form fields and renders them as a plain-text page. */
 export function uploadVehicle(req: Request, res: Response) {

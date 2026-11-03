@@ -7,5 +7,9 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./test/setup.ts'],
+    // Pinned so the tests don't depend on a developer's local .env.
+    env: {
+      VITE_QUICK_SELECTS: '["tesla-Model 3-Performance","bmw-130d-xDrive 26d"]',
+    },
   },
 });
