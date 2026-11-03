@@ -1,0 +1,11 @@
+{
+  "name": "@vehicle/shared",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./types": "./types.ts",
+    "./vehicleData.json": "./vehicleData.json",
+    "./utils": "./utils.ts"
+  }
+}

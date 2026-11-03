@@ -1,0 +1,27 @@
+/* Layout only, matching the reference: browser-default look, stacked equal-width controls. */
+.vehicle-form select,
+.vehicle-form input[type='file'],
+.quick-select button {
+  display: block;
+  width: 200px;
+  margin: 0 0 4px;
+}
+
+.logbook-upload label {
+  display: block;
+  margin: 1em 0;
+}
+
+.quick-select {
+  margin-top: 2.5em;
+}
+
+/* Hidden visually, still read by screen readers. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
