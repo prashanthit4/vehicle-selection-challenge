@@ -11,6 +11,7 @@ import {
   logbookTooLargeMessage,
 } from '@vehicle/shared/constants';
 import { EMPTY_LOGBOOK_TEXT, formatResultPage } from '@vehicle/shared/templates';
+import { listVehicles } from '@vehicle/shared/utils';
 
 describe('parseMaxSizeBytes', () => {
   it('parses a whole number of bytes', () => {
@@ -87,5 +88,19 @@ describe('formatResultPage', () => {
     expect(formatResultPage({ make: 'bmw', model: '130d', badge: 'xDrive 26d', logbookText })).toBe(
       'Make: bmw\nModel: 130d\nBadge: xDrive 26d\n\nLogbook:\n\nno entries yet!!\n',
     );
+  });
+});
+
+describe('listVehicles', () => {
+  it('flattens make → model → badges into one entry per badge, in order', () => {
+    expect(listVehicles({ ford: { Ranger: ['Raptor', 'Wildtrak'] }, bmw: { '130d': ['xDrive 26d'] } })).toEqual([
+      { make: 'ford', model: 'Ranger', badge: 'Raptor' },
+      { make: 'ford', model: 'Ranger', badge: 'Wildtrak' },
+      { make: 'bmw', model: '130d', badge: 'xDrive 26d' },
+    ]);
+  });
+
+  it('returns nothing for an empty catalog', () => {
+    expect(listVehicles({})).toEqual([]);
   });
 });
