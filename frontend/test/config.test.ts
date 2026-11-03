@@ -10,14 +10,11 @@ async function loadConfig() {
 afterEach(() => vi.unstubAllEnvs());
 
 describe('frontend config', () => {
-  it('reads the logbook limit from VITE_MAX_LOGBOOK_BYTES', async () => {
-    vi.stubEnv('VITE_MAX_LOGBOOK_BYTES', '2048');
-    expect((await loadConfig()).MAX_LOGBOOK_BYTES).toBe(2048);
-  });
-
-  it.each(['', 'lots', '1mb'])('falls back to the shared default for %j', async (value) => {
-    vi.stubEnv('VITE_MAX_LOGBOOK_BYTES', value);
-    expect((await loadConfig()).MAX_LOGBOOK_BYTES).toBe(DEFAULT_MAX_LOGBOOK_BYTES);
+  it('gets the logbook limit injected from the backend’s MAX_LOGBOOK_BYTES', async () => {
+    const { MAX_LOGBOOK_BYTES } = await loadConfig();
+    expect(Number.isInteger(MAX_LOGBOOK_BYTES) && MAX_LOGBOOK_BYTES > 0).toBe(true);
+    // Unset on a fresh clone, so this is the shared 1 MB default unless backend/.env changes it.
+    if (!process.env.MAX_LOGBOOK_BYTES) expect(MAX_LOGBOOK_BYTES).toBe(DEFAULT_MAX_LOGBOOK_BYTES);
   });
 
   it('builds the upload URL from VITE_API_URL and the shared path', async () => {

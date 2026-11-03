@@ -9,6 +9,7 @@ import {
   logbookTooLargeMessage,
 } from '@vehicle/shared/constants';
 import quickSelectsJson from '@vehicle/shared/quickSelects.json';
+import { formatMake, listVehicles } from '@vehicle/shared/utils';
 import type { VehicleCatalog } from '@vehicle/shared/types';
 import catalogJson from '@vehicle/shared/vehicleData.json';
 import { MAX_LOGBOOK_BYTES } from '../../src/config';
@@ -187,9 +188,7 @@ describe('VehicleForm – layout', () => {
     // quickSelects.json uses the catalog's shape; a typo there would give a button that can't fill
     // the dropdowns, so check every make → model → badge against vehicleData.json.
     const catalog: VehicleCatalog = catalogJson;
-    const entries = Object.entries(quickSelectsJson as VehicleCatalog).flatMap(([make, models]) =>
-      Object.entries(models).flatMap(([model, badges]) => badges.map((badge) => ({ make, model, badge }))),
-    );
+    const entries = listVehicles(quickSelectsJson as VehicleCatalog);
 
     expect(entries.length).toBeGreaterThanOrEqual(2); // the brief asks for at least two
     for (const { make, model, badge } of entries) {
@@ -226,7 +225,11 @@ describe('VehicleForm – layout', () => {
     const heading = screen.getByRole('heading', { name: 'Select a Vehicle' });
     const buttons = Array.from(heading.parentElement!.querySelectorAll('button')).map((b) => b.textContent);
 
-    expect(buttons).toEqual(['Tesla Model 3 Performance', 'BMW 130d xDrive 26d', 'Ford Ranger Raptor']);
+    // One button per badge in shared/quickSelects.json, in file order, labelled "Make Model Badge".
+    const expected = listVehicles(quickSelectsJson as VehicleCatalog).map(
+      ({ make, model, badge }) => `${formatMake(make)} ${model} ${badge}`,
+    );
+    expect(buttons).toEqual(expected);
   });
 
   it('keeps dropdown labels for screen readers but hides them visually', async () => {

@@ -2,9 +2,11 @@
 
 interface ImportMetaEnv {
   readonly VITE_API_URL?: string;
-  readonly VITE_MAX_LOGBOOK_BYTES?: string;
 }
 
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+/** The backend's MAX_LOGBOOK_BYTES (parsed), injected by vite.config.ts `define`. */
+declare const __MAX_LOGBOOK_BYTES__: number;

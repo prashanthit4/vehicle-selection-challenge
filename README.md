@@ -22,7 +22,7 @@ Open http://localhost:5173. The backend runs on :3000. No `.env` setup is needed
 | `npm run lint`      | Runs ESLint                         |
 | `npm run typecheck` | Type-checks both apps               |
 
-Optional settings are listed in `backend/.env.example` and `frontend/.env.example`: the port, the logbook size limit (1 MB by default), and the backend URL.
+Optional settings are listed in `backend/.env.example` and `frontend/.env.example`. The logbook size limit (1 MB by default) is set once, in `backend/.env`: the frontend reads it at build time, so the form and server can't disagree.
 
 ## 2. Check it against the brief
 
@@ -42,9 +42,10 @@ Error popups to try:
 ## 3. Key decisions
 
 - **Shared rules, defined once.** The catalog (`vehicleData.json`), the quick selects (`quickSelects.json`), the file-type rules, the error messages and the result-page layout all live in `shared/`. The form, the server and the tests use the same definitions, so they can't drift apart.
-- **The dropdown options come from the catalog.** Only the selected values are kept in state. The Model and Badge lists are worked out from the catalog on each render, and changing a level clears the levels below it.
-- **Quick selects use the catalog's own shape.** `shared/quickSelects.json` is make → model → badges, like `vehicleData.json`, and each badge becomes one button. A test checks that every entry exists in the catalog. In production this list would come from the backend or an admin-managed store, so it could change without a deploy.
-- **A normal form post, with Multer on the server.** The file is uploaded as `multipart/form-data`, and the backend replies with the result page itself.
+- **Vehicle data is the provided JSON, held in memory.** The brief allowed a hard-coded map or a JSON file read into memory. `shared/vehicleData.json` is imported by both apps, so the dropdowns and the server validation always use the same catalog.
+- **The selection state lives in a `useVehicleSelection` hook.** Only the selected values are stored. Each level's options are worked out from the catalog on every render, so they can't go stale, and choosing a level clears the levels below it. The hook has its own tests, and `VehicleForm` only renders, checks the file and submits.
+- **Quick selects use the catalog's own shape.** `shared/quickSelects.json` is make → model → badges, like `vehicleData.json`, and each badge becomes one button. A test checks that every entry exists in the catalog.
+- **A normal form post, with Multer on the server.** This matches the reference: the form submits to `/upload`, and the backend replies with the plain-text result page itself. The file is uploaded as `multipart/form-data`.
   - **Limits on every part of the request:** at most one file of up to 1 MB, three short text fields, and a few parts in total. Uploads are kept in memory and never written to disk.
   - **Upload errors:** anything else gets a clear 400 or 413 response.
   - **Safe output:** responses are `text/plain` with `nosniff`, so uploaded text can never run as HTML.
@@ -55,5 +56,19 @@ Error popups to try:
 ### Assumptions
 
 - **The logbook file is required, but it can be empty.** A vehicle may not have any service entries yet. An empty `.txt` is accepted, and the result page shows `no entries yet!!`.
-- **Adding entries later isn't built yet.** Nothing is stored today. It would need a database or file store.
-- **Server-side errors appear as a plain-text page.** Everything the form can catch is a popup. Only problems the browser can't detect, such as a tampered request or binary content saved as `.txt`, reach the server.
+- **Adding entries later isn't built yet.** Nothing is stored today (see Next steps).
+
+## 4. Trade-offs and next steps
+
+**Trade-offs I made on purpose**
+- **Options are derived, not fetched.** The catalog is small, static and supplied with the brief, so the dropdowns update instantly, with no loading states, no race conditions and no extra endpoints. If it became large or changed often, I'd fetch it from the API instead:
+  - **Endpoints:** `GET /api/makes`, `/api/makes/:make/models` and `/api/makes/:make/models/:model/badges`.
+  - **Frontend:** fetch each level when the one above changes, cancel stale requests with `AbortController` so a slow response can't overwrite a newer choice, and cache the results.
+- **The result page is rendered by the server.** It matches the reference, and it keeps the frontend simple. The cost: a problem only the server can detect, such as a tampered request or binary content saved as `.txt`, shows as a plain-text page rather than a popup. Everything the form can check is caught first. The alternative is posting with `fetch` to a JSON endpoint and showing the result in a React route.
+- **Errors use `window.alert()`,** as the requirements asked. Every message goes through one `showError()` function, so swapping in a modal is a one-function change.
+
+**Next steps**
+- **Store logbooks** in a database or file store, so entries can be added to an existing logbook.
+- **Serve the catalog and quick selects from the backend,** or an admin-managed store, so they can change without a deploy.
+- **Production build of the backend.** It currently runs TypeScript through `tsx`. Compile or bundle it to JavaScript, and serve the frontend and `/upload` from the same host. The Vite dev proxy only exists in development.
+- **Upgrade Vitest** to clear the `npm audit` advisories in its dependencies. They affect the test runner only, not the app.

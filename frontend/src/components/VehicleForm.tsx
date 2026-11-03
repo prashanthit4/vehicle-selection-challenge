@@ -9,19 +9,17 @@ import {
   LOGBOOK_TYPE_MESSAGE,
   logbookTooLargeMessage,
 } from '@vehicle/shared/constants';
-import { formatMake } from '@vehicle/shared/utils';
+import { formatMake, listVehicles } from '@vehicle/shared/utils';
 import quickSelectsJson from '@vehicle/shared/quickSelects.json';
 import catalogJson from '@vehicle/shared/vehicleData.json';
 import { MAX_LOGBOOK_BYTES, UPLOAD_URL } from '../config';
+import { useVehicleSelection } from '../hooks/useVehicleSelection';
 import DropdownSelector, { type DropdownSelectorProps } from './DropdownSelector';
 
 const catalog: VehicleCatalog = catalogJson;
 
 // Same make → model → badges shape as the catalog; each badge becomes one button.
-const QUICK_SELECTS: VehicleSelection[] = Object.entries(quickSelectsJson as VehicleCatalog).flatMap(
-  ([make, models]) =>
-    Object.entries(models).flatMap(([model, badges]) => badges.map((badge) => ({ make, model, badge }))),
-);
+const QUICK_SELECTS = listVehicles(quickSelectsJson as VehicleCatalog);
 
 const toOptions = (values: string[], format: (v: string) => string = (v) => v) =>
   values.map((value) => ({ value, label: format(value) }));
@@ -47,43 +45,29 @@ interface VehicleFormProps {
 }
 
 export default function VehicleForm({ quickSelects = QUICK_SELECTS }: VehicleFormProps) {
-  const [make, setMake] = useState('');
-  const [model, setModel] = useState('');
-  const [badge, setBadge] = useState('');
+  const { selection, options, isComplete, selectMake, selectModel, selectBadge, selectVehicle, isSelected } =
+    useVehicleSelection(catalog);
+  const { make, model, badge } = selection;
   // Bumping the key remounts the file input, which is how an <input type="file"> is cleared.
   const [fileInputKey, setFileInputKey] = useState(0);
-
-  // Options are derived from the current selection, so they're always in sync.
-  const makes = Object.keys(catalog);
-  const models = make ? Object.keys(catalog[make] ?? {}) : [];
-  const badges = make && model ? (catalog[make]?.[model] ?? []) : [];
 
   // The upload input only exists once a Badge is chosen, so it unmounts (and forgets its file)
   // when Make or Model change. A quick select can keep it mounted, so clear it explicitly.
   const clearLogbook = () => setFileInputKey((key) => key + 1);
 
+  // A logbook belongs to the chosen vehicle, so changing Make, Model or the whole vehicle drops it.
   const handleMakeChange = (value: string) => {
-    setMake(value);
-    setModel('');
-    setBadge('');
+    selectMake(value);
     clearLogbook();
   };
 
   const handleModelChange = (value: string) => {
-    setModel(value);
-    setBadge('');
+    selectModel(value);
     clearLogbook();
   };
 
-  const handleBadgeChange = (value: string) => {
-    setBadge(value);
-  };
-
-  // Sets all three at once, bypassing the step-by-step resets.
   const applyQuickSelect = (preset: VehicleSelection) => {
-    setMake(preset.make);
-    setModel(preset.model);
-    setBadge(preset.badge);
+    selectVehicle(preset);
     clearLogbook();
   };
 
@@ -102,7 +86,7 @@ export default function VehicleForm({ quickSelects = QUICK_SELECTS }: VehicleFor
   // Client-side checks only. When they pass, the browser POSTs the form (including the file) as
   // multipart/form-data to UPLOAD_URL and navigates to the page the backend renders.
   const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
-    if (!make || !model || !badge) {
+    if (!isComplete) {
       e.preventDefault();
       return;
     }
@@ -114,11 +98,6 @@ export default function VehicleForm({ quickSelects = QUICK_SELECTS }: VehicleFor
     }
   };
 
-  // What the hidden fields below post alongside the file.
-  const selection: VehicleSelection = { make, model, badge };
-
-  const isMatch = (p: VehicleSelection) => p.make === make && p.model === model && p.badge === badge;
-
   // Drill-down: each dropdown only appears once the one above it has a value.
   const dropdowns: (DropdownSelectorProps & { visible: boolean })[] = [
     {
@@ -127,7 +106,7 @@ export default function VehicleForm({ quickSelects = QUICK_SELECTS }: VehicleFor
       label: 'Make',
       hideLabel: true,
       placeholder: 'Select a make',
-      options: toOptions(makes, formatMake),
+      options: toOptions(options.makes, formatMake),
       value: make,
       onChange: handleMakeChange,
     },
@@ -136,7 +115,7 @@ export default function VehicleForm({ quickSelects = QUICK_SELECTS }: VehicleFor
       label: 'Model',
       hideLabel: true,
       placeholder: 'Select a model',
-      options: toOptions(models),
+      options: toOptions(options.models),
       value: model,
       onChange: handleModelChange,
       visible: Boolean(make),
@@ -146,9 +125,9 @@ export default function VehicleForm({ quickSelects = QUICK_SELECTS }: VehicleFor
       label: 'Badge',
       hideLabel: true,
       placeholder: 'Select a badge',
-      options: toOptions(badges),
+      options: toOptions(options.badges),
       value: badge,
-      onChange: handleBadgeChange,
+      onChange: selectBadge,
       visible: Boolean(model),
     },
   ];
@@ -197,7 +176,7 @@ export default function VehicleForm({ quickSelects = QUICK_SELECTS }: VehicleFor
               key={`${preset.make}-${preset.model}-${preset.badge}`}
               type="button"
               onClick={() => applyQuickSelect(preset)}
-              aria-pressed={isMatch(preset)}
+              aria-pressed={isSelected(preset)}
             >
               {formatMake(preset.make)} {preset.model} {preset.badge}
             </button>
